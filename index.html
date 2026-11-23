@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>二進位讀心術：猜生日日期</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      background: var(--card-bg);
+      max-width: 480px;
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+      color: var(--primary);
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .progress {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 16px;
+      letter-spacing: 0.05em;
+    }
+
+    .number-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+      background: #f1f5f9;
+      padding: 16px;
+      border-radius: 12px;
+    }
+
+    .number-cell {
+      background: #ffffff;
+      padding: 12px 0;
+      border-radius: 8px;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    button {
+      flex: 1;
+      padding: 14px 20px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-yes {
+      background-color: #10b981;
+      color: white;
+    }
+
+    .btn-yes:hover {
+      background-color: #059669;
+    }
+
+    .btn-no {
+      background-color: #ef4444;
+      color: white;
+    }
+
+    .btn-no:hover {
+      background-color: #dc2626;
+    }
+
+    .result-number {
+      font-size: 4rem;
+      font-weight: 800;
+      color: var(--primary);
+      margin: 16px 0;
+    }
+
+    .binary-breakdown {
+      background: #f1f5f9;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 24px;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- 開始畫面 -->
+    <div id="start-screen">
+      <h1>🔮 二進位讀心術</h1>
+      <p>請在心裡默想你生日的<strong>「日期」</strong>（1 到 31 之間的數字），不要說出來。<br><br>接下來會出現 5 張數字卡，只要告訴我卡片裡「有沒有」你的生日，我就能猜出來！</p>
+      <button class="btn-primary" onclick="startGame()">我想好了，開始！</button>
+    </div>
+
+    <!-- 遊戲進行畫面 -->
+    <div id="game-screen" class="hidden">
+      <div class="progress" id="progress-text">第 1 / 5 張卡片</div>
+      <h1>這張卡片裡有你的生日嗎？</h1>
+      <div class="number-grid" id="number-grid"></div>
+      <div class="btn-group">
+        <button class="btn-no" onclick="answer(false)">沒有</button>
+        <button class="btn-yes" onclick="answer(true)">有！</button>
+      </div>
+    </div>
+
+    <!-- 結果畫面 -->
+    <div id="result-screen" class="hidden">
+      <h1>✨ 我猜到了！你的生日是：</h1>
+      <div class="result-number" id="final-date">25 號</div>
+      <div class="binary-breakdown" id="binary-info"></div>
+      <button class="btn-primary" onclick="startGame()">再玩一次</button>
+    </div>
+  </div>
+
+  <script>
+    // 5 個位元權重 (2^0 到 2^4)
+    const bitWeights = [1, 2, 4, 8, 16];
+    let currentStep = 0;
+    let totalScore = 0;
+    let chosenBits = [];
+
+    // 動態產生對應位元的 16 個數字 (利用位元運算 &)
+    function getCardNumbers(weight) {
+      const nums = [];
+      for (let i = 1; i <= 31; i++) {
+        if ((i & weight) !== 0) {
+          nums.push(i);
+        }
+      }
+      // 稍微打亂陣列順序，增加魔術神秘感（可移除此行維持由小到大排序）
+      return nums.sort(() => Math.random() - 0.5);
+    }
+
+    function startGame() {
+      currentStep = 0;
+      totalScore = 0;
+      chosenBits = [];
+
+      document.getElementById('start-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.add('hidden');
+      document.getElementById('game-screen').classList.remove('hidden');
+
+      renderCard();
+    }
+
+    function renderCard() {
+      const weight = bitWeights[currentStep];
+      const numbers = getCardNumbers(weight);
+      
+      document.getElementById('progress-text').textContent = `第 ${currentStep + 1} / 5 張卡片`;
+      
+      const grid = document.getElementById('number-grid');
+      grid.innerHTML = '';
+      
+      numbers.forEach(num => {
+        const cell = document.createElement('div');
+        cell.className = 'number-cell';
+        cell.textContent = num;
+        grid.appendChild(cell);
+      });
+    }
+
+    function answer(isPresent) {
+      const weight = bitWeights[currentStep];
+      
+      if (isPresent) {
+        totalScore += weight;
+        chosenBits.push(weight);
+      }
+
+      currentStep++;
+
+      if (currentStep < bitWeights.length) {
+        renderCard();
+      } else {
+        showResult();
+      }
+    }
+
+    function showResult() {
+      document.getElementById('game-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.remove('hidden');
+
+      const resultEl = document.getElementById('final-date');
+      const infoEl = document.getElementById('binary-info');
+
+      if (totalScore === 0) {
+        resultEl.textContent = '0 號？';
+        infoEl.textContent = '你 5 張卡片都選了「沒有」，1 到 31 號之間沒有這個日期喔！';
+      } else {
+        resultEl.textContent = `${totalScore} 號`;
+        const binaryStr = totalScore.toString(2).padStart(5, '0');
+        infoEl.innerHTML = `
+          <strong>解密算式：</strong> ${chosenBits.join(' + ')} = ${totalScore}<br>
+          <strong>二進位代碼：</strong> <code>${binaryStr}</code>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>
